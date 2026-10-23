@@ -1,0 +1,50 @@
+name: Android debug build (personal fork)
+
+# Mirrors the Android steps of the upstream release workflow (Windows runner,
+# NDK 27.2.12479018, npm run fetch:android, gradlew.bat), minus signing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android NDK
+        shell: pwsh
+        run: |
+          $sdkManager = Get-ChildItem -Path @(
+            (Join-Path $env:ANDROID_HOME 'cmdline-tools'),
+            (Join-Path $env:ANDROID_SDK_ROOT 'cmdline-tools')
+          ) -Filter 'sdkmanager.bat' -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $sdkManager) { throw 'Android sdkmanager.bat was not found on the hosted runner.' }
+          & $sdkManager 'ndk;27.2.12479018'
+      - name: Install dependencies
+        run: npm ci
+      - name: Fetch verified Android native assets
+        run: npm run fetch:android
+      - name: Build debug APKs
+        shell: pwsh
+        run: |
+          Set-Location android
+          ./gradlew.bat assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aethon-elder-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
